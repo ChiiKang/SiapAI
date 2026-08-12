@@ -47,10 +47,13 @@ Content-Type: application/json
 ```
 
 Server behavior: validate fields and allowed status values; reject unknown
-device keys; use `eventId` for idempotency; upsert the session row; notify
-exactly once on RUNNING → READY; return 200/202 quickly.
+device keys; use `eventId` for idempotency; ignore events whose `occurredAt`
+predates the stored row's (a delayed delivery must not rewind the state and
+let the next READY notify twice); upsert the session row; notify exactly once
+on RUNNING → READY; return 200/202 quickly.
 
-Response: `{ "ok": true, "duplicate": bool, "notified": bool }`.
+Response: `{ "ok": true, "duplicate": bool, "notified": bool }`, or
+`{ "ok": true, "stale": true, "notified": false }` for an out-of-order event.
 
 ### Read/delete endpoints — `/agents` (for the iOS app)
 

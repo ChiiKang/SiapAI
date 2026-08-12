@@ -41,7 +41,11 @@ export class ApiClient {
       status,
       occurredAt: new Date().toISOString(),
     };
-    this.chain = this.chain.then(() => this.deliver(event));
+    // The catch keeps one unexpected failure from rejecting the chain and
+    // taking every later event (and the process) down with it.
+    this.chain = this.chain
+      .then(() => this.deliver(event))
+      .catch((err) => this.session.log(`event delivery error: ${err}`));
   }
 
   // Resolves when every queued event has been delivered or dropped.

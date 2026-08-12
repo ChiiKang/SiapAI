@@ -9,6 +9,10 @@ create table if not exists public.agents (
   status         text not null check (status in ('RUNNING', 'READY')),
   started_at     timestamptz,
   updated_at     timestamptz not null,
+  -- Mac-generated occurrence time of the event that produced this row. Used
+  -- to ignore events that arrive out of order (a delayed retry landing after
+  -- a newer event would otherwise rewind the state and re-notify).
+  occurred_at    timestamptz,
   last_event_id  uuid not null
 );
 

@@ -32,10 +32,16 @@ export class GenericProcessAdapter implements AgentAdapter {
       for (const cb of this.exitCallbacks) cb(null);
     });
 
-    child.on("exit", (code) => {
-      this.logEvent(`process exited code=${code ?? "unknown"}`);
-      // One turn per process lifetime: exit is the completion signal.
-      for (const cb of this.readyCallbacks) cb({});
+    child.on("exit", (code, signal) => {
+      this.logEvent(
+        `process exited code=${code ?? "unknown"}${signal ? ` signal=${signal}` : ""}`
+      );
+      // One turn per process lifetime: a normal exit is the completion
+      // signal. A process killed by a signal (Ctrl-C, SIGTERM) was
+      // interrupted, not finished, so it must not report READY.
+      if (signal === null) {
+        for (const cb of this.readyCallbacks) cb({});
+      }
       for (const cb of this.exitCallbacks) cb(code);
     });
 
