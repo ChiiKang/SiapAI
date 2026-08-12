@@ -1,0 +1,83 @@
+{
+  "comment": [
+    "The behavioral contract for POST /events, executed against BOTH",
+    "implementations: mac/tests/server.test.js drives the local Node server",
+    "over real HTTP, supabase/functions/events/scenarios_test.ts drives the",
+    "Deno edge-function logic. If the two ever disagree, one of them fails.",
+    "",
+    "Placeholders: E1..E9 become distinct event ids, S1 a session id, and",
+    "T1..T9 become increasing timestamps (T1 earliest)."
+  ],
+  "scenarios": [
+    {
+      "name": "a single turn notifies exactly once",
+      "events": [
+        { "eventId": "E1", "status": "RUNNING", "occurredAt": "T1", "expect": { "notified": false } },
+        { "eventId": "E2", "status": "READY", "occurredAt": "T2", "expect": { "notified": true } }
+      ],
+      "expectedNotifications": 1
+    },
+    {
+      "name": "two turns notify twice",
+      "events": [
+        { "eventId": "E1", "status": "RUNNING", "occurredAt": "T1", "expect": { "notified": false } },
+        { "eventId": "E2", "status": "READY", "occurredAt": "T2", "expect": { "notified": true } },
+        { "eventId": "E3", "status": "RUNNING", "occurredAt": "T3", "expect": { "notified": false } },
+        { "eventId": "E4", "status": "READY", "occurredAt": "T4", "expect": { "notified": true } }
+      ],
+      "expectedNotifications": 2
+    },
+    {
+      "name": "retrying the same eventId never notifies twice",
+      "events": [
+        { "eventId": "E1", "status": "RUNNING", "occurredAt": "T1", "expect": { "notified": false } },
+        { "eventId": "E2", "status": "READY", "occurredAt": "T2", "expect": { "notified": true } },
+        { "eventId": "E2", "status": "READY", "occurredAt": "T2", "expect": { "notified": false, "duplicate": true } },
+        { "eventId": "E2", "status": "READY", "occurredAt": "T2", "expect": { "notified": false, "duplicate": true } }
+      ],
+      "expectedNotifications": 1
+    },
+    {
+      "name": "a repeated READY with a new eventId does not notify",
+      "events": [
+        { "eventId": "E1", "status": "RUNNING", "occurredAt": "T1", "expect": { "notified": false } },
+        { "eventId": "E2", "status": "READY", "occurredAt": "T2", "expect": { "notified": true } },
+        { "eventId": "E3", "status": "READY", "occurredAt": "T3", "expect": { "notified": false } }
+      ],
+      "expectedNotifications": 1
+    },
+    {
+      "name": "a session that starts at READY does not notify",
+      "events": [
+        { "eventId": "E1", "status": "READY", "occurredAt": "T1", "expect": { "notified": false } }
+      ],
+      "expectedNotifications": 0
+    },
+    {
+      "name": "a late older event cannot rewind state and re-notify",
+      "events": [
+        { "eventId": "E1", "status": "RUNNING", "occurredAt": "T1", "expect": { "notified": false } },
+        { "eventId": "E2", "status": "READY", "occurredAt": "T2", "expect": { "notified": true } },
+        { "eventId": "E3", "status": "RUNNING", "occurredAt": "T1", "expect": { "notified": false, "stale": true } },
+        { "eventId": "E4", "status": "READY", "occurredAt": "T3", "expect": { "notified": false } }
+      ],
+      "expectedNotifications": 1
+    },
+    {
+      "name": "an interrupted session that never reaches READY notifies nothing",
+      "events": [
+        { "eventId": "E1", "status": "RUNNING", "occurredAt": "T1", "expect": { "notified": false } },
+        { "eventId": "E2", "status": "RUNNING", "occurredAt": "T2", "expect": { "notified": false } }
+      ],
+      "expectedNotifications": 0
+    }
+  ],
+  "rejected": [
+    { "name": "STALE is not a storable status", "patch": { "status": "STALE" } },
+    { "name": "unknown status", "patch": { "status": "FINISHED" } },
+    { "name": "eventId must be a UUID", "patch": { "eventId": "not-a-uuid" } },
+    { "name": "sessionId must be a UUID", "patch": { "sessionId": "nope" } },
+    { "name": "displayName cannot be empty", "patch": { "displayName": "" } },
+    { "name": "occurredAt must be a timestamp", "patch": { "occurredAt": "yesterday" } }
+  ]
+}

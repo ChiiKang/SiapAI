@@ -16,7 +16,7 @@ for work the plan already calls for.
    (the iOS app lives there; CLI + backend + docs live on the MVP branch).
 5. Run the automated tests to establish ground truth:
    `cd mac && npm install && npm test` and
-   `deno test supabase/functions/events/logic_test.ts`.
+   `deno test --allow-read supabase/functions/events/`.
 
 ## Then continue, in this priority order
 
@@ -34,6 +34,12 @@ for work the plan already calls for.
 
 ## Hard rules (from the plan's guardrails — they still bind)
 
+- **The owner runs everything locally** (`agent-ready serve`) and will only
+  pay for Apple Developer enrollment if the product proves itself. Never make
+  the cloud backend, a paid account, or APNs a prerequisite for anything.
+- The local server and the Supabase functions implement ONE contract. Change
+  one, change the other, and keep `mac/tests/scenarios.json` passing in both
+  suites — that table is what stops them drifting.
 - Two stored states only (RUNNING/READY); STALE is derived on the iOS client.
 - Detection only from official agent signals inside adapters — never polling,
   never output parsing, never exit-as-READY for interactive agents.

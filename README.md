@@ -3,82 +3,85 @@
 Know the moment a local coding agent stops working and wants you. Two states
 only — RUNNING and READY — one event, one notification.
 
-A developer starts coding agents (Codex, Claude Code, or any script) in
-terminals on a Mac, walks away, and gets a phone notification on each
-RUNNING → READY transition. One iOS screen shows the current state of every
-monitored session.
+Start agents (Codex, Claude Code, or any script) in terminals on your Mac,
+walk away, and get notified when one finishes its turn. One iOS screen shows
+the current state of every monitored session.
+
+**It runs entirely on your Mac.** No account, no deployment, no internet —
+`agent-ready serve` is the whole backend. The Supabase path exists for later,
+when you want notifications away from home; the same contract serves both, so
+switching is one line of config.
 
 ## Repository layout
 
 ```
-mac/        agent-ready CLI (TypeScript/Node, zero runtime deps)
-supabase/   POST /events + GET/DELETE /agents Edge Functions, agents table
+mac/        agent-ready CLI + local server (TypeScript/Node, zero runtime deps)
+supabase/   optional cloud backend: POST /events + GET/DELETE /agents
 ios/        SwiftUI app — on branch claude/agent-ready-ios
-scripts/    test-backend.sh — curl integration test for the deployed backend
+scripts/    test-backend.sh — curl integration test for a deployed backend
 docs/       contract.md (states + event contract) · testing.md (how to test everything)
-.claude/    commands/go.md — /go prompt for the next agent session
+.claude/    commands/go.md, commands/goal.md — prompts for the next session
 ```
+
+## Quick start — fully local, about five minutes
+
+```bash
+cd mac && npm install && npm run build && npm link
+
+agent-ready setup --local --machine "MacBook Pro"   # prints your device key
+agent-ready serve                                    # leave running; prints a LAN URL
+
+# in other terminals — as many as you like:
+agent-ready run --name "Auth refactor" -- codex
+agent-ready run --name "Docs pass"     -- claude
+agent-ready run --name "Nightly job"   -- python3 batch.py
+```
+
+Each completed turn raises a macOS notification and updates the session list.
+`--notify telegram` (with `--telegram-bot-token` / `--telegram-chat-id`)
+sends to your phone instead, still with no Apple membership.
+
+For the iPhone app, point it at the LAN URL `serve` prints plus the device
+key: branch `claude/agent-ready-ios`, see `ios/README.md`.
 
 ## Status
 
 - [x] **Milestone 0 — contract** (`docs/contract.md`)
-- [x] **Milestone 1 — READY detection locally** (Codex `notify` hook; 5 tests)
-      — *pending: owner's manual run against real Codex, see docs/testing.md §3*
+- [x] **Milestone 1 — READY detection locally** (Codex `notify` hook)
+      — *pending: your manual run against real Codex, `docs/testing.md` §3*
 - [x] **Milestone 1.5 — more adapters**: Claude Code (`UserPromptSubmit`/`Stop`
       hooks), generic process (exit = READY for batch jobs)
-- [x] **Milestone 2 — backend event path**: `agents` table, `POST /events`
-      with device-key auth + eventId idempotency; CLI sends events
-- [x] **Milestone 3 — phone notification**: Telegram provider behind a
-      provider interface, fired only on RUNNING → READY
-      — *pending: owner creates the bot + sets secrets, see docs/testing.md §4*
+- [x] **Milestone 2 — event path**: local server (`agent-ready serve`) and the
+      optional Supabase backend, both with device-key auth, `eventId`
+      idempotency and out-of-order protection
+- [x] **Milestone 3 — notification**: macOS Notification Center locally,
+      Telegram for away-from-desk, behind one provider interface
 - [x] **Milestone 4 — iOS status screen** (branch `claude/agent-ready-ios`)
-      — *pending: owner builds/runs via Xcode, see ios/README.md*
+      — *pending: your Xcode build, `ios/README.md`*
 - [x] **Milestone 5 — hardening**: bounded exponential retry (5 max, same
-      eventId), 4xx no-retry, graceful local-only mode, structured logs
-- [ ] Milestone 6 — native APNs push (after Apple Developer enrollment)
+      eventId), 4xx no-retry, atomic state writes, clean port-conflict and
+      offline behavior
+- [ ] Milestone 6 — native APNs push (only if this proves itself worth the
+      Apple Developer enrollment)
 
-All code milestones are implemented and tested: **21 Node tests** (CLI,
-adapters, retry/idempotency semantics, five concurrent sessions, privacy),
-**9 Deno tests** (backend validation, notify rule, and a cross-surface
-contract test replaying the CLI's real payloads), and an **Xcode test target**
-(Cmd-U) for the iOS display logic. What remains is deployment + on-device
-verification, which needs the owner's accounts and hardware:
-**`docs/testing.md` is the step-by-step guide.**
-
-## Quick start
-
-```bash
-# 1. CLI on the Mac
-cd mac && npm install && npm run build && npm link
-
-# 2. Try it locally, no backend at all (Milestone 1 behavior)
-agent-ready run --name "Auth refactor" -- codex
-agent-ready run --name "Docs pass"     -- claude
-agent-ready run --name "Nightly job"   -- python3 batch.py
-
-# 3. Deploy backend + configure (docs/testing.md §4)
-supabase db push && supabase functions deploy events && supabase functions deploy agents
-agent-ready setup --api-base-url https://<ref>.supabase.co/functions/v1 --machine "MacBook Pro"
-supabase secrets set DEVICE_KEY=dk_…   # printed by setup
-# optional Telegram secrets for notifications — docs/testing.md §4
-
-# 4. iOS app (branch claude/agent-ready-ios): ios/README.md
-```
+Tested with **35 Node tests**, **17 Deno tests**, and an **Xcode test target**
+(Cmd-U). The behavioral contract lives in `mac/tests/scenarios.json` and runs
+against both backends, so they cannot drift apart.
 
 ## How detection works (and what it never does)
 
-Each agent gets an adapter that listens for the agent's **official**
+Each agent gets an adapter that listens for that agent's **official**
 completion signal — Codex's `notify` hook, Claude Code's `Stop` hook, or
 process exit for run-to-completion scripts. Hooks forward only
-`{type, turn-id}` over a local Unix socket. No polling, no output parsing,
-no exit-guessing for interactive agents, and the agent's own stdio passes
-through untouched.
+`{type, turn-id}` over a local Unix socket. No polling, no output parsing, no
+exit-guessing for interactive agents, and the agent's own stdio passes through
+untouched.
 
 Privacy: no prompts, terminal output, file names, or source code ever leave
-the Mac — they are not even read by the wrapper.
+your Mac — they are not even read by the wrapper. In local mode nothing
+leaves the machine at all.
 
 ## For the next agent session
 
-Type `/go` (the prompt lives in `.claude/commands/go.md`). It reorients from
-the docs, runs the test suites, and continues from whatever state the
-checklist above shows.
+`/go` continues the build from wherever it stands; `/goal` runs the full
+pre-ship verification sweep. Both live in `.claude/commands/`.

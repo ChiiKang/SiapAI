@@ -5,11 +5,22 @@ this repository up. Read `docs/contract.md` first (the states and the event
 contract), then this file. Scope and guardrails come from
 `Agent_Ready_MVP_Implementation_Plan (1).docx` in the design bundle.
 
-## 1. How the system works (three surfaces, one contract)
+## 1. How the system works (one contract, two backends)
+
+Local — the default, nothing leaves the Mac:
+
+```
+Mac terminal                      Mac (same machine)              iPhone
+agent-ready run -- codex          agent-ready serve               AgentReady app
+  └─ adapter detects READY ─────►   POST /events ──► notification   reads GET /agents
+                                    state.json                      over Wi-Fi
+```
+
+Cloud — the same contract, for notifications away from home:
 
 ```
 Mac terminal                        Supabase                      iPhone
-agent-ready run -- codex            POST /events                  Telegram notification (V1)
+agent-ready run -- codex            POST /events                  Telegram notification
   └─ adapter detects READY   ───►     └─ upsert agents row  ───►  AgentReady app reads GET /agents
 ```
 
@@ -28,31 +39,37 @@ agent-ready run -- codex            POST /events                  Telegram notif
    backoff (2s→32s), *reusing the same `eventId`* so retries can never
    double-notify. No config file → local-only mode (prints transitions,
    sends nothing).
-3. **Backend (`supabase/`)**: `events` function authenticates the device key,
-   validates, dedupes by `eventId`, upserts the one `agents` row per session,
-   and calls the notification provider **only** when stored status was
-   RUNNING and incoming is READY. `agents` function serves GET (list) and
-   DELETE (stale-row swipe) to the iOS app.
-4. **Notification (V1)**: Telegram bot (provider interface `notify.ts`;
-   swap for APNs in Milestone 6 without touching the event handler).
+3. **Backend — local (`mac/src/server.ts`, `agent-ready serve`)**: same
+   machine, no account. Authenticates the device key, validates, dedupes by
+   `eventId`, ignores out-of-order events, keeps one record per session in
+   `~/.agent-ready/state.json`, and notifies **only** when stored status was
+   RUNNING and incoming is READY. Serves GET/DELETE `/agents` to the app on
+   the LAN.
+   **Backend — cloud (`supabase/`)**: the identical contract over Postgres,
+   for when you want notifications away from home.
+4. **Notification**: macOS Notification Center (local, instant, no accounts)
+   or Telegram (reaches your phone anywhere, no Apple membership). Both sit
+   behind one provider interface, so APNs later is a drop-in.
 5. **iOS app (`ios/`, branch `claude/agent-ready-ios`)**: one SwiftUI list —
    READY first, then RUNNING, then STALE (derived on the client: RUNNING with
    no event for 30 min). Refresh on appear/foreground/pull. No timers, no
    sockets, no background polling.
 
-## 2. Prerequisites for a full end-to-end test
+## 2. Prerequisites
 
-- Mac with Node 20+, and Codex and/or Claude Code installed.
-- A Supabase project (free tier fine): https://supabase.com/dashboard
-- A Telegram account (for V1 notifications).
-- Xcode 15+ (for the iOS app; optional until Milestone 4 testing).
+**For the local path (everything below except §7):** a Mac with Node 20+,
+and Codex and/or Claude Code installed. That is all — no accounts.
 
-## 3. Component tests (no deployment needed)
+Optional extras: Xcode 15+ for the iPhone app (§6); a free Telegram bot if
+you want notifications away from your desk (§4); a Supabase project only if
+you later want the cloud backend (§7).
 
-### CLI — automated (already green in CI-less form)
+## 3. Component tests (nothing to set up)
+
+### CLI and local server — automated
 
 ```bash
-cd mac && npm install && npm test          # 21 tests
+cd mac && npm install && npm test          # 35 tests
 ```
 
 Covers: one READY per turn, `turn-id` dedupe, approval reset, exit≠READY for
@@ -60,21 +77,22 @@ Codex, Claude Stop/UserPromptSubmit mapping, generic exit=READY, interrupted
 process reports no READY, contract fields on the wire, same-`eventId`
 retries, bounded retry (5 max), 4xx no-retry, local-only mode, `setup`
 config (0600 permissions, key rotation), five concurrent sessions staying
-distinct, and zero content leakage (asserted on stdout, stderr, and the
-session log).
+distinct, zero content leakage (asserted on stdout, stderr, and the session
+log), and the **local server**: the whole scenario table, malformed-event
+rejection, auth, the app's payload shape, delete, state surviving a restart,
+a clean failure on a taken port, and a full CLI→server→notification run.
 
-### Backend — logic and cross-surface contract
+### Backend logic — both implementations, one table
 
 ```bash
-deno test --allow-read supabase/functions/events/   # 9 tests
+deno test --allow-read supabase/functions/events/   # 17 tests
 ```
 
 Covers: payload validation (STALE rejected — it must never be stored), the
-notify rule truth table, notification copy, and a **contract test that
-replays the exact payloads the CLI put on the wire** (captured as a fixture
-by the Node suite) through the real validator and notify rule — including
-redelivery and out-of-order arrival. If the CLI and the backend ever drift
-apart, this fails here instead of on your Mac.
+notify rule truth table, notification copy, a **contract test replaying the
+exact payloads the CLI put on the wire**, and the **shared scenario table**
+(`mac/tests/scenarios.json`) — the same seven lifecycles the local server is
+tested against, so the local and cloud backends cannot behave differently.
 
 > Run the Node suite before the Deno suite when you change the CLI's event
 > shape: it regenerates `mac/tests/fixtures/captured-events.json`.
@@ -92,7 +110,56 @@ Run 2–3 real turns. Pass: exactly one `READY` line per completed turn; the
 log records every notify event type Codex emitted; no prompt/output text
 anywhere. Same for Claude Code: `agent-ready run --name "Test" -- claude`.
 
-## 4. Deploying the backend (Milestones 2–3)
+## 4. Running it for real, locally (no accounts, ~5 minutes)
+
+```bash
+agent-ready setup --local --machine "MacBook Pro"   # writes config, prints your device key
+agent-ready serve                                   # leave this running
+```
+
+`serve` prints the port, the notification mode, and a LAN address like
+`http://192.168.1.24:8787` — that address is what the iPhone app uses.
+
+In other terminals:
+
+```bash
+agent-ready run --name "Auth refactor" -- codex
+agent-ready run --name "Docs pass"     -- claude
+```
+
+Each completed turn: a macOS notification appears, and the `serve` terminal
+logs `READY  Auth refactor  → notified`. That is the product working.
+
+**Notifications on your phone without Apple enrollment** (optional): create a
+Telegram bot via @BotFather, send it any message, read your `chat.id` from
+`https://api.telegram.org/bot<token>/getUpdates`, then:
+
+```bash
+agent-ready setup --local --machine "MacBook Pro" \
+  --notify telegram --telegram-bot-token <token> --telegram-chat-id <chat-id>
+```
+
+(Re-running `setup` rotates the device key — re-paste it into the app.)
+
+## 5. End-to-end acceptance tests (plan §10)
+
+Local mode unless noted:
+
+| Test | Steps | Pass |
+| --- | --- | --- |
+| Single session | `agent-ready run --name "Auth refactor" -- codex`, give it a real task | One notification shortly after the turn completes; `serve` logs one `→ notified`; app shows READY |
+| No duplicate | Stop `serve` mid-turn, restart it within a minute | CLI prints `retry n/5 in …s` then `delivered … same eventId`; still exactly one notification |
+| Five sessions | Five `agent-ready run` in five terminals with distinct `--name` | Five rows, independent transitions, five distinguishable notifications |
+| Backend restart | Ctrl-C `serve`, start it again | Session list intact (it lives in `~/.agent-ready/state.json`) |
+| Interrupted job | Ctrl-C a wrapped script | No READY, no notification |
+| iOS list | Open the app during the above | Correct states/timestamps; READY visually distinct; pull-to-refresh works |
+| Privacy | `grep -riE 'secret|prompt' ~/.agent-ready/` | Only names, ids and timestamps — no prompts, output, or file names |
+| Walk-away (the payoff) | Long task, leave the desk; Telegram mode if leaving the house | Notification arrives while you are away |
+
+## 6. Optional: the cloud backend (only for notifications away from home)
+
+Skip this entirely while validating locally. Everything above works without
+it, and switching later changes one line of config.
 
 ```bash
 # once: npm install -g supabase
@@ -101,27 +168,14 @@ supabase link --project-ref <your-project-ref>
 supabase db push                    # applies migrations/001_agents.sql
 supabase functions deploy events    # config.toml already sets verify_jwt=false
 supabase functions deploy agents
-```
 
-Create the device key and configure the CLI:
-
-```bash
 agent-ready setup --api-base-url https://<project-ref>.supabase.co/functions/v1 --machine "MacBook Pro"
-# prints dk_… ; then:
-supabase secrets set DEVICE_KEY=dk_…
+supabase secrets set DEVICE_KEY=dk_…                       # the key setup printed
+supabase secrets set TELEGRAM_BOT_TOKEN=<token> TELEGRAM_CHAT_ID=<chat-id>
 ```
 
-Telegram (V1 notifications):
-
-1. Talk to @BotFather → `/newbot` → copy the bot token.
-2. Send your new bot any message, then visit
-   `https://api.telegram.org/bot<token>/getUpdates` and copy `chat.id`.
-3. `supabase secrets set TELEGRAM_BOT_TOKEN=<token> TELEGRAM_CHAT_ID=<chat-id>`
-
-(Until those secrets exist the backend logs the would-be notification instead
-of sending it — the event path is testable without Telegram.)
-
-### Backend integration test
+(Without the Telegram secrets the function logs the would-be notification, so
+the event path is still testable.) Then:
 
 ```bash
 ./scripts/test-backend.sh https://<project-ref>.supabase.co/functions/v1 dk_…
@@ -133,20 +187,7 @@ repeated READY does not re-notify, a late-arriving older event is ignored,
 GET lists, DELETE removes. Manual part: **exactly one** Telegram message
 must have arrived for the whole run.
 
-## 5. End-to-end acceptance tests (plan §10)
-
-| Test | Steps | Pass |
-| --- | --- | --- |
-| Single session | `agent-ready run --name "Auth refactor" -- codex`, give it a task, walk away | Phone buzzes once shortly after the turn completes; app shows READY |
-| No duplicate | Let the CLI retry (toggle Wi-Fi off during a turn, back on after) | One notification only; CLI prints `same eventId, no duplicate notification` |
-| Five sessions | Five `agent-ready run` in five terminals with distinct `--name` | Five rows, independent transitions, five distinguishable notifications |
-| Temporary network loss | Wi-Fi off; finish a turn; Wi-Fi on within ~1 min | `retry n/5 in …s` lines, then delivery; notification arrives late but once |
-| Backend restart | Redeploy functions mid-session | No state lost (it lives in Postgres) |
-| iOS list | Open the app during the above | Correct states/timestamps; READY visually distinct; pull-to-refresh works |
-| Privacy | `grep -riE 'secret|prompt' ~/.agent-ready/sessions/` + check Supabase table | Only names/ids/timestamps anywhere |
-| Walk-away (the payoff) | Start a long task, leave the Mac, go for a walk | Notification arrives on your phone while away |
-
-## 6. iOS app (branch `claude/agent-ready-ios`)
+## 7. iOS app (branch `claude/agent-ready-ios`)
 
 ```bash
 git checkout claude/agent-ready-ios     # superset branch: also has mac/ and supabase/
@@ -163,11 +204,17 @@ and decoding a real `GET /agents` payload. Green there means the remaining
 risk is plumbing, not logic.
 
 Then run on your iPhone with free development signing (Xcode → Signing: your
-personal team). First launch shows the connect screen: paste the API base URL
-and device key (stored in the Keychain, never UserDefaults). Full manual test
-checklist is in `ios/README.md`.
+personal team). First launch shows the connect screen: paste the URL and
+device key (stored in the Keychain, never UserDefaults):
 
-## 7. Known limitations (documented, not hidden)
+- **local mode** — the LAN address `agent-ready serve` printed, e.g.
+  `http://192.168.1.24:8787`. The phone must be on the same Wi-Fi, `serve`
+  must be running, and iOS asks once for Local Network permission — allow it.
+- **cloud mode** — the `https://<ref>.supabase.co/functions/v1` URL.
+
+Full manual test checklist is in `ios/README.md`.
+
+## 8. Known limitations (documented, not hidden)
 
 1. **Codex multi-turn notifications.** Codex has no official turn-start
    event. After the first READY, the backend sees the session as READY, so a
@@ -179,14 +226,20 @@ checklist is in `ios/README.md`.
    guess with heuristics.
 2. **One device key** for CLI and iOS (plan: no multi-user auth in V1).
    Rotate by re-running `agent-ready setup`, updating the `DEVICE_KEY`
-   secret, and re-pasting into the app.
-3. **No offline queue.** 5 bounded retries (~1 min); if the Mac is offline
-   longer, the event drops and state catches up on the next transition. By
-   design (guardrails §11).
-4. **Pairing** is manual paste (URL + key) rather than the wireframe's
+   secret (cloud only), and re-pasting into the app.
+3. **No offline queue.** 5 bounded retries (~1 min); if the backend is
+   unreachable longer, the event drops and state catches up on the next
+   transition. By design (guardrails §11).
+4. **Local mode reaches the phone only on the same Wi-Fi**, and only while
+   `agent-ready serve` is running and the Mac is awake. For notifications
+   away from home use `--notify telegram` (still no Apple membership), or the
+   cloud backend in §6. The local server listens on the LAN, so anyone on
+   your network can reach the port — the device key is what protects it; it
+   is not meant for untrusted networks.
+5. **Pairing** is manual paste (URL + key) rather than the wireframe's
    auto-pairing code exchange: the plan's endpoint contract has no pairing
    endpoint, and the plan wins on architecture.
-5. **iOS build is untested in this container** (no Xcode, and no Swift
+6. **iOS build is untested in this container** (no Xcode, and no Swift
    toolchain reachable through the proxy). The Swift is deliberately plain
    SwiftUI with no dependencies, and the logic most likely to be wrong is
    covered by the Cmd-U tests — but expect at most minor compile fixes on
