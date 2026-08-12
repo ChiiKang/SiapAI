@@ -20,7 +20,7 @@ requires the owner (credentials, physical devices, account enrollment).
    `claude/agent-ready-mvp-5deun8`).
 2. `git fetch origin` and confirm both branches build on their pushed heads.
 3. Establish the baseline: `cd mac && npm install && npm test` and
-   `deno test supabase/functions/events/logic_test.ts`. Fix any red before
+   `deno test --allow-read supabase/functions/events/`. Fix any red before
    anything else.
 
 ## The sweep — in order
@@ -42,12 +42,17 @@ requires the owner (credentials, physical devices, account enrollment).
 
 ### 2. Cross-surface contract consistency (the highest-value check)
 
-The same event shape is written in four places: `docs/contract.md`, the CLI
-(`apiClient.ts`), the backend (`logic.ts`, `agents/index.ts`), and the iOS
-decoder (`AgentSession.swift`). Diff them field-by-field — names, casing,
-optionality, formats (UUID casing, ISO-8601 fractional seconds from
+The same event shape is written in five places: `docs/contract.md`, the CLI
+(`apiClient.ts`), the local server (`mac/src/eventLogic.ts`, `server.ts`), the
+cloud backend (`supabase/functions/events/logic.ts`, `agents/index.ts`), and
+the iOS decoder (`AgentSession.swift`). Diff them field-by-field — names,
+casing, optionality, formats (UUID casing, ISO-8601 fractional seconds from
 Postgres). Any mismatch is a bug the owner would hit on day one; fix code,
 not the contract, unless the contract itself is wrong.
+
+The local and cloud event logic are deliberate twins. `mac/tests/scenarios.json`
+runs against both; if you change behavior, change both files and extend that
+table rather than special-casing one side.
 
 ### 3. Behavioral verification beyond the existing suites
 

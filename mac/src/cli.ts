@@ -15,11 +15,14 @@ import { ClaudeCodeAdapter } from "./adapters/claude-code";
 import { CodexAdapter } from "./adapters/codex";
 import { GenericProcessAdapter } from "./adapters/generic";
 import { ApiClient } from "./apiClient";
-import { loadConfig, runSetup } from "./config";
+import { DEFAULT_PORT, loadConfig, runSetup } from "./config";
+import { lanAddress, startServer } from "./server";
 import { Session } from "./session";
 
 const USAGE = `usage:
+  agent-ready setup --local [--port <n>] [--machine <name>] [--notify mac|telegram|none]
   agent-ready setup --api-base-url <url> [--machine <name>]
+  agent-ready serve [--port <n>]
   agent-ready run [--name <display name>] [--adapter codex|claude|generic] -- <command> [args…]
 
 examples:
@@ -132,10 +135,48 @@ function runCommand(argv: string[]): void {
   process.on("SIGTERM", forward);
 }
 
+async function serveCommand(argv: string[]): Promise<void> {
+  const config = loadConfig();
+  if (!config) {
+    fail("no config found — run `agent-ready setup --local` first");
+  }
+
+  let port = config.serverPort ?? DEFAULT_PORT;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--port") port = Number(argv[++i]);
+  }
+  if (!Number.isInteger(port)) fail("--port must be a whole number");
+
+  const handle = await startServer({ config, port }).catch((err: Error) => {
+    fail(
+      err.message.includes("EADDRINUSE")
+        ? `port ${port} is already in use — is another \`agent-ready serve\` running?`
+        : `could not start server: ${err.message}`
+    );
+  });
+
+  const lan = lanAddress();
+  process.stdout.write(`agent-ready · local server on port ${handle.port}\n`);
+  process.stdout.write(`machine   ${config.machineName}\n`);
+  process.stdout.write(`notify    ${config.notify ?? "mac"}\n`);
+  process.stdout.write(
+    `phone     ${lan ? `http://${lan}:${handle.port}` : "no LAN address found"}\n`
+  );
+  process.stdout.write(`\nwaiting for agent events… (Ctrl-C to stop)\n`);
+
+  const stop = () => {
+    handle.close().then(() => process.exit(0));
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
   if (argv[0] === "setup") {
     runSetup(argv.slice(1));
+  } else if (argv[0] === "serve") {
+    void serveCommand(argv.slice(1));
   } else if (argv[0] === "run") {
     runCommand(argv.slice(1));
   } else {

@@ -27,7 +27,27 @@ CLI must never send it.
   refresh must produce **no** notification.
 - `STALE` never notifies.
 
-## Event contract — `POST /events` (implemented in Milestone 2)
+## Two backends, one contract
+
+The contract below has two interchangeable implementations. Which one is in
+use is decided by `apiBaseUrl` in `~/.agent-ready/config.json` — nothing else
+in the system knows the difference.
+
+| | Local (`agent-ready serve`) | Cloud (Supabase) |
+| --- | --- | --- |
+| Setup | `agent-ready setup --local` | project + deploy + secrets |
+| State | `~/.agent-ready/state.json` | Postgres `agents` table |
+| Notifications | macOS Notification Center, or Telegram | Telegram |
+| Phone reach | same Wi-Fi | anywhere |
+| Accounts needed | none | Supabase (free) |
+
+Behavior is identical and kept that way by `mac/tests/scenarios.json`, which
+is executed against **both** implementations (`mac/tests/server.test.js` over
+real HTTP, `supabase/functions/events/scenarios_test.ts` over the edge
+logic). The pure logic is duplicated on purpose — the runtimes differ — and
+those tests are what stop the copies from drifting.
+
+## Event contract — `POST /events`
 
 ```
 POST /events
