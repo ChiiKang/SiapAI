@@ -39,6 +39,8 @@ Content-Type: application/json
   "sessionId":   "uuid",                   // unique per wrapped agent session
   "displayName": "Auth refactor",
   "machineName": "MacBook Pro",
+  "agentKind":   "Codex",                  // optional; notification body copy;
+                                           // defaults to "agent"
   "status":      "RUNNING" | "READY",
   "occurredAt":  "2026-08-12T12:30:00Z"    // generated on the Mac
 }
@@ -47,6 +49,22 @@ Content-Type: application/json
 Server behavior: validate fields and allowed status values; reject unknown
 device keys; use `eventId` for idempotency; upsert the session row; notify
 exactly once on RUNNING → READY; return 200/202 quickly.
+
+Response: `{ "ok": true, "duplicate": bool, "notified": bool }`.
+
+### Read/delete endpoints — `/agents` (for the iOS app)
+
+Same `Authorization: Bearer <device-key>` header.
+
+```
+GET    /agents                     -> [{ sessionId, displayName, machineName,
+                                         agentKind, status, startedAt, updatedAt }]
+DELETE /agents?session_id=<uuid>   -> { "ok": true }    (stale-row swipe)
+```
+
+This is the plan §12 "narrow read endpoint": the iOS app never holds a
+database credential, and the service-role key never leaves the Edge
+Functions.
 
 ### Database schema (`agents`, one row per session)
 
@@ -80,11 +98,14 @@ official mid-session signals (e.g. Codex `approval-requested`) that prove a
 turn is in progress, allowing the READY → RUNNING reset without heuristics. It
 introduces no new product state.
 
-| Agent | Adapter | Completion signal | Milestone |
+| Agent | Adapter | Turn start (→ RUNNING) | Completion (→ READY) |
 | --- | --- | --- | --- |
-| Codex | `CodexAdapter` | Official `notify` hook, event `agent-turn-complete`, deduped by `turn-id` | 1 |
-| Claude Code | `ClaudeCodeAdapter` | Official `Stop` hook | 1.5 |
-| Any batch script | `GenericProcessAdapter` | Process exit (legitimate for run-to-completion programs, unlike interactive TUIs) | 1.5 |
+| Codex | `CodexAdapter` | `approval-requested` only (no official turn-start event — see Known risks) | `notify` hook, `agent-turn-complete`, deduped by `turn-id` |
+| Claude Code | `ClaudeCodeAdapter` | `UserPromptSubmit` hook (a real turn-start signal) | `Stop` hook |
+| Any batch script | `GenericProcessAdapter` | launch | Process exit (legitimate for run-to-completion programs, unlike interactive TUIs) |
+
+Adapter selection: inferred from the command basename (`codex`, `claude`,
+anything else → generic), overridable with `--adapter`.
 
 ## Privacy
 

@@ -1,0 +1,9 @@
+# Both functions authenticate with the device key (Authorization: Bearer
+# dk_…), not a Supabase JWT — so platform JWT verification must be off or the
+# gateway would reject every request before our code runs.
+
+[functions.events]
+verify_jwt = false
+
+[functions.agents]
+verify_jwt = false

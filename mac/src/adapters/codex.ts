@@ -11,11 +11,9 @@
 // invocation for the same turn emits nothing.
 
 import { spawn } from "node:child_process";
-import * as fs from "node:fs";
-import * as net from "node:net";
-import * as os from "node:os";
 import * as path from "node:path";
 import { AgentAdapter, AgentProcess, ReadyInfo } from "./adapter";
+import { createHookServer } from "./hook-server";
 
 export class CodexAdapter implements AgentAdapter {
   private readyCallbacks: Array<(info: ReadyInfo) => void> = [];
@@ -40,27 +38,19 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   start(command: string, args: string[]): AgentProcess {
-    const socketDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-ready-"));
-    const socketPath = path.join(socketDir, "hook.sock");
-
-    const server = net.createServer((connection) => {
-      let buffered = "";
-      connection.on("data", (chunk) => {
-        buffered += chunk.toString("utf8");
-      });
-      connection.on("end", () => {
-        for (const line of buffered.split("\n")) {
-          if (line.trim() !== "") this.handleHookMessage(line);
-        }
-      });
-      connection.on("error", () => {});
-    });
-    server.listen(socketPath);
+    const server = createHookServer(
+      (message) => this.handleHookMessage(message),
+      () => this.logEvent("hook message unparseable")
+    );
 
     const hookPath = path.join(__dirname, "codex-hook.js");
     // JSON.stringify output is also a valid TOML array of strings, which is
     // what `codex -c key=value` expects on the right-hand side.
-    const notifyValue = JSON.stringify([process.execPath, hookPath, socketPath]);
+    const notifyValue = JSON.stringify([
+      process.execPath,
+      hookPath,
+      server.socketPath,
+    ]);
 
     // The -c override is appended after the user's args so that wrapping
     // works for any command shape (clap accepts options after positionals).
@@ -70,20 +60,15 @@ export class CodexAdapter implements AgentAdapter {
 
     child.on("error", (err) => {
       this.logEvent(`spawn error: ${err.message}`);
-      cleanup();
+      server.close();
       for (const cb of this.exitCallbacks) cb(null);
     });
-
-    const cleanup = () => {
-      server.close();
-      fs.rmSync(socketDir, { recursive: true, force: true });
-    };
 
     child.on("exit", (code) => {
       // Give in-flight hook connections a moment to be received before the
       // socket goes away.
       setTimeout(() => {
-        cleanup();
+        server.close();
         for (const cb of this.exitCallbacks) cb(code);
       }, 100);
     });
@@ -94,17 +79,12 @@ export class CodexAdapter implements AgentAdapter {
     };
   }
 
-  private handleHookMessage(line: string): void {
-    let message: { type?: string; "turn-id"?: string };
-    try {
-      message = JSON.parse(line);
-    } catch {
-      this.logEvent("hook message unparseable");
-      return;
-    }
-
-    const type = message.type ?? "unknown";
-    const turnId = message["turn-id"];
+  private handleHookMessage(message: Record<string, unknown>): void {
+    const type = String(message.type ?? "unknown");
+    const turnId =
+      typeof message["turn-id"] === "string"
+        ? (message["turn-id"] as string)
+        : undefined;
     this.logEvent(`notify event type=${type}${turnId ? ` turn=${turnId}` : ""}`);
 
     if (type === "agent-turn-complete") {

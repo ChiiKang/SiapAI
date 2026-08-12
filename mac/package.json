@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test tests/run.test.js"
+    "test": "npm run build && node --test tests/run.test.js tests/adapters.test.js tests/backend.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

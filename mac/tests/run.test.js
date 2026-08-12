@@ -1,64 +1,33 @@
-// Milestone 1 acceptance tests. The wrapper runs against fake-codex.js,
+// Milestone 1 acceptance tests: the Codex adapter against fake-codex.js,
 // which reproduces Codex's documented notify behavior.
 
 "use strict";
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { spawn } = require("node:child_process");
-const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
+const { runWrapper, count } = require("./helpers");
 
-const CLI = path.join(__dirname, "..", "dist", "cli.js");
 const FAKE = path.join(__dirname, "fake-codex.js");
 
-function runWrapper(steps) {
-  return new Promise((resolve, reject) => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-ready-test-"));
-    const child = spawn(
+function runCodex(steps) {
+  return runWrapper({
+    args: [
+      "run",
+      "--name",
+      "Test session",
+      "--adapter",
+      "codex",
+      "--",
       process.execPath,
-      [CLI, "run", "--name", "Test session", "--", process.execPath, FAKE],
-      {
-        env: { ...process.env, AGENT_READY_HOME: home },
-        stdio: ["pipe", "pipe", "pipe"],
-      }
-    );
-
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => (stdout += d));
-    child.stderr.on("data", (d) => (stderr += d));
-
-    // Feed steps one at a time; each step's hook invocation completes before
-    // fake-codex reads the next line, so no artificial sleeps are needed.
-    child.stdin.write(steps.map((s) => s + "\n").join(""));
-    child.stdin.end();
-
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error(`wrapper timed out.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
-    }, 15000);
-
-    child.on("exit", (code) => {
-      clearTimeout(timer);
-      const logDir = path.join(home, "sessions");
-      const logFiles = fs.existsSync(logDir) ? fs.readdirSync(logDir) : [];
-      const log =
-        logFiles.length > 0
-          ? fs.readFileSync(path.join(logDir, logFiles[0]), "utf8")
-          : "";
-      resolve({ code, stdout, stderr, log });
-    });
+      FAKE,
+    ],
+    steps,
   });
 }
 
-function count(haystack, regex) {
-  return (haystack.match(regex) ?? []).length;
-}
-
 test("exactly one READY per completed turn; duplicates ignored", async () => {
-  const result = await runWrapper(["turn", "turn", "dup", "turn", "exit"]);
+  const result = await runCodex(["turn", "turn", "dup", "turn", "exit"]);
 
   assert.equal(result.code, 0);
   // 3 distinct turns -> exactly 3 READY transitions; the replayed turn-id adds none.
@@ -72,7 +41,7 @@ test("exactly one READY per completed turn; duplicates ignored", async () => {
 });
 
 test("approval-requested resets READY back to RUNNING", async () => {
-  const result = await runWrapper(["turn", "approval", "turn", "exit"]);
+  const result = await runCodex(["turn", "approval", "turn", "exit"]);
 
   assert.equal(result.code, 0);
   assert.equal(count(result.stdout, /status\s+READY/g), 2);
@@ -84,14 +53,14 @@ test("approval-requested resets READY back to RUNNING", async () => {
 });
 
 test("consecutive READY without a reset is marked explicitly", async () => {
-  const result = await runWrapper(["turn", "turn", "exit"]);
+  const result = await runCodex(["turn", "turn", "exit"]);
 
   assert.equal(result.code, 0);
   assert.equal(count(result.stdout, /no RUNNING reset observed/g), 1);
 });
 
-test("process exit is never treated as READY", async () => {
-  const result = await runWrapper(["exit"]);
+test("process exit is never treated as READY (codex adapter)", async () => {
+  const result = await runCodex(["exit"]);
 
   assert.equal(result.code, 0);
   assert.equal(count(result.stdout, /status\s+READY/g), 0);
@@ -99,7 +68,7 @@ test("process exit is never treated as READY", async () => {
 });
 
 test("no prompt or output content reaches stdout or the session log", async () => {
-  const result = await runWrapper(["turn", "dup", "approval", "turn", "exit"]);
+  const result = await runCodex(["turn", "dup", "approval", "turn", "exit"]);
 
   for (const channel of [result.stdout, result.stderr, result.log]) {
     assert.doesNotMatch(channel, /SECRET/);

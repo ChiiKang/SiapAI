@@ -3,70 +3,79 @@
 Know the moment a local coding agent stops working and wants you. Two states
 only — RUNNING and READY — one event, one notification.
 
-A developer starts coding agents (Codex first) in terminals on a Mac, walks
-away, and gets a phone notification on each RUNNING → READY transition. One
-iOS screen shows the current state of every monitored session.
+A developer starts coding agents (Codex, Claude Code, or any script) in
+terminals on a Mac, walks away, and gets a phone notification on each
+RUNNING → READY transition. One iOS screen shows the current state of every
+monitored session.
 
 ## Repository layout
 
 ```
-mac/        agent-ready CLI (TypeScript/Node) — wraps the agent, detects READY
-supabase/   Edge Function + agents table            (Milestone 2)
-ios/        SwiftUI app                             (Milestone 4)
-docs/       contract.md — states, event contract, adapter table, known risks
+mac/        agent-ready CLI (TypeScript/Node, zero runtime deps)
+supabase/   POST /events + GET/DELETE /agents Edge Functions, agents table
+ios/        SwiftUI app — on branch claude/agent-ready-ios
+scripts/    test-backend.sh — curl integration test for the deployed backend
+docs/       contract.md (states + event contract) · testing.md (how to test everything)
+.claude/    commands/go.md — /go prompt for the next agent session
 ```
 
 ## Status
 
 - [x] **Milestone 0 — contract** (`docs/contract.md`)
-- [x] **Milestone 1 — prove READY detection locally.** CLI wrapper + Codex
-  adapter print RUNNING/READY transitions to stdout and a session log. No
-  backend involved.
-- [ ] Milestone 1.5 — Claude Code + generic process adapters
-- [ ] Milestone 2 — Supabase `POST /events` + `agents` table
-- [ ] Milestone 3 — phone notification on RUNNING → READY
-- [ ] Milestone 4 — iOS status screen (SwiftUI)
-- [ ] Milestone 5 — hardening (bounded retries, offline queue)
+- [x] **Milestone 1 — READY detection locally** (Codex `notify` hook; 5 tests)
+      — *pending: owner's manual run against real Codex, see docs/testing.md §3*
+- [x] **Milestone 1.5 — more adapters**: Claude Code (`UserPromptSubmit`/`Stop`
+      hooks), generic process (exit = READY for batch jobs)
+- [x] **Milestone 2 — backend event path**: `agents` table, `POST /events`
+      with device-key auth + eventId idempotency; CLI sends events
+- [x] **Milestone 3 — phone notification**: Telegram provider behind a
+      provider interface, fired only on RUNNING → READY
+      — *pending: owner creates the bot + sets secrets, see docs/testing.md §4*
+- [x] **Milestone 4 — iOS status screen** (branch `claude/agent-ready-ios`)
+      — *pending: owner builds/runs via Xcode, see ios/README.md*
+- [x] **Milestone 5 — hardening**: bounded exponential retry (5 max, same
+      eventId), 4xx no-retry, graceful local-only mode, structured logs
+- [ ] Milestone 6 — native APNs push (after Apple Developer enrollment)
 
-## Milestone 1: run the proof
+All code milestones are implemented and unit/integration tested (15 Node
+tests + 5 Deno tests). What remains is deployment + on-device verification,
+which needs the owner's accounts and hardware: **`docs/testing.md` is the
+step-by-step guide.**
 
-Automated (no real Codex needed — uses a behavior-faithful fake):
+## Quick start
 
-```
-cd mac
-npm install
-npm test
-```
-
-Manual proof on a Mac with Codex installed (the real acceptance test):
-
-```
+```bash
+# 1. CLI on the Mac
 cd mac && npm install && npm run build && npm link
+
+# 2. Try it locally, no backend at all (Milestone 1 behavior)
 agent-ready run --name "Auth refactor" -- codex
+agent-ready run --name "Docs pass"     -- claude
+agent-ready run --name "Nightly job"   -- python3 batch.py
+
+# 3. Deploy backend + configure (docs/testing.md §4)
+supabase db push && supabase functions deploy events && supabase functions deploy agents
+agent-ready setup --api-base-url https://<ref>.supabase.co/functions/v1 --machine "MacBook Pro"
+supabase secrets set DEVICE_KEY=dk_…   # printed by setup
+# optional Telegram secrets for notifications — docs/testing.md §4
+
+# 4. iOS app (branch claude/agent-ready-ios): ios/README.md
 ```
-
-Codex runs normally and owns the terminal. From a second terminal:
-
-```
-tail -f ~/.agent-ready/sessions/<short-session-id>.log
-```
-
-Run two or three real turns. Pass criteria:
-
-- exactly **one `READY` per completed turn** — none mid-turn, none duplicated;
-- the log records every notify event type Codex sent (this tells us whether
-  `approval-requested` fires and whether any turn-start signal exists — see
-  `docs/contract.md` § Known risks);
-- no prompt text, output text, or file names anywhere in the log.
 
 ## How detection works (and what it never does)
 
-The wrapper launches Codex with its official notification hook:
-`codex -c 'notify=["node", <hook>, <socket>]'`. Codex itself invokes the hook
-once per `agent-turn-complete`; the hook forwards only `{ type, turn-id }`
-over a local Unix socket to the wrapper, which dedupes by `turn-id` and prints
-the transition. No polling, no output parsing, no process-exit guessing, and
-the agent's own stdio passes through untouched.
+Each agent gets an adapter that listens for the agent's **official**
+completion signal — Codex's `notify` hook, Claude Code's `Stop` hook, or
+process exit for run-to-completion scripts. Hooks forward only
+`{type, turn-id}` over a local Unix socket. No polling, no output parsing,
+no exit-guessing for interactive agents, and the agent's own stdio passes
+through untouched.
 
 Privacy: no prompts, terminal output, file names, or source code ever leave
 the Mac — they are not even read by the wrapper.
+
+## For the next agent session
+
+Type `/go` (the prompt lives in `.claude/commands/go.md`). It reorients from
+the docs, runs the test suites, and continues from whatever state the
+checklist above shows.

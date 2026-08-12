@@ -39,9 +39,14 @@ export class Session {
     fs.appendFileSync(this.logPath, `${new Date().toISOString()} ${line}\n`);
   }
 
-  private say(line: string): void {
+  // Prints to stdout and appends to the session log.
+  announce(line: string): void {
     process.stdout.write(line + "\n");
     this.log(line);
+  }
+
+  private say(line: string): void {
+    this.announce(line);
   }
 
   announceLaunch(): void {
@@ -68,10 +73,13 @@ export class Session {
     }
   }
 
-  markRunning(reason: string): void {
-    if (this.status === "RUNNING") return;
+  // Returns true when this actually changed state (READY -> RUNNING), so the
+  // caller knows whether an event should be sent.
+  markRunning(reason: string): boolean {
+    if (this.status === "RUNNING") return false;
     this.status = "RUNNING";
     this.say(`status    RUNNING   ${clock()}   (${reason} — turn in progress)`);
+    return true;
   }
 
   close(code: number | null): void {
