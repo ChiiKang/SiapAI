@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit // UIPasteboard for the copy action
 
 // The few things a person genuinely needs after pairing. A pushed leaf
 // screen, not a tab.

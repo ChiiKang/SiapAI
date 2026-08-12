@@ -7,14 +7,18 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-    GENERATE_INFOPLIST_FILE: false
 targets:
   AgentReady:
     type: application
     platform: iOS
     sources:
       - AgentReady
+    settings:
+      base:
+        # The app's Info.plist is written by XcodeGen from the properties
+        # below; the test bundle keeps Xcode's generated one.
+        GENERATE_INFOPLIST_FILE: false
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     info:
       path: AgentReady/Info.plist
       properties:
@@ -23,3 +27,10 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+  AgentReadyTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - AgentReadyTests
+    dependencies:
+      - target: AgentReady

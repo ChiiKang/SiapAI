@@ -1,6 +1,11 @@
 import SwiftUI
 
 // The primary screen: which agents need me, in under a second.
+//
+// @MainActor because the helper view properties below read main-actor state
+// (the view model and settings) outside of `body`, which carries the
+// isolation on its own.
+@MainActor
 struct AgentListView: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var model: AgentListViewModel
@@ -61,7 +66,11 @@ struct AgentListView: View {
             showConnect = !settings.isPaired && !settings.skippedOnboarding
         }
         .fullScreenCover(isPresented: $showConnect) {
-            ConnectView()
+            // Injected explicitly: presented content is a separate hierarchy.
+            ConnectView().environmentObject(settings)
+        }
+        .onChange(of: settings.isPaired) { _, paired in
+            if paired { Task { await model.refresh() } }
         }
     }
 

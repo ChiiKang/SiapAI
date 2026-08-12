@@ -21,9 +21,18 @@ In Xcode: select the AgentReady target → Signing & Capabilities → choose you
 personal team (free development signing works — no paid membership needed),
 then run on your iPhone.
 
+**Run the unit tests first (Cmd-U).** `AgentReadyTests` covers the logic that
+decides what you see and cannot be verified without Xcode: timestamp parsing
+against every shape Postgres returns (including the microsecond form that
+would otherwise break the whole list), the derived STALE rule at the 30-minute
+boundary, sort order, row metadata copy, and decoding the exact `GET /agents`
+payload. If those pass, the app's display logic is sound and anything left is
+plumbing.
+
 > This Swift code was written without access to Xcode (Linux container), so
 > expect at most minor compile fixes on first build. The code is deliberately
-> plain SwiftUI with no dependencies.
+> plain SwiftUI with no dependencies. If something doesn't compile, paste the
+> error and run `/go` — it's a one-line fix class, not a design problem.
 
 ## First launch
 
@@ -70,6 +79,8 @@ then run on your iPhone.
   (the footnote in Settings says so).
 
 ## Manual test checklist
+
+Run Cmd-U first (see above), then with a real backend:
 
 With the backend deployed and a couple of `agent-ready run` sessions active:
 

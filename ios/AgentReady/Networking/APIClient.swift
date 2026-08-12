@@ -50,22 +50,39 @@ struct APIClient {
         return data
     }
 
-    // Postgres timestamps may or may not carry fractional seconds.
-    private static let decoder: JSONDecoder = {
-        let plain = ISO8601DateFormatter()
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    private static let timestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
+    // Postgres returns between 0 and 6 fractional-second digits
+    // ("…:00+00:00", "…:00.123456+00:00"), while ISO8601DateFormatter accepts
+    // exactly 0 or exactly 3. Dropping the fraction before parsing handles
+    // every case; the app displays whole minutes, so precision is irrelevant.
+    static func parseTimestamp(_ string: String) -> Date? {
+        var normalized = string
+        if let dot = normalized.firstIndex(of: ".") {
+            var end = normalized.index(after: dot)
+            while end < normalized.endIndex, normalized[end].isNumber {
+                end = normalized.index(after: end)
+            }
+            normalized.removeSubrange(dot..<end)
+        }
+        return timestampFormatter.date(from: normalized)
+    }
+
+    static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let string = try decoder.singleValueContainer().decode(String.self)
-            if let date = fractional.date(from: string) ?? plain.date(from: string) {
-                return date
+            guard let date = parseTimestamp(string) else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Unrecognized date: \(string)"
+                ))
             }
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: decoder.codingPath,
-                debugDescription: "Unrecognized date: \(string)"
-            ))
+            return date
         }
         return decoder
     }()

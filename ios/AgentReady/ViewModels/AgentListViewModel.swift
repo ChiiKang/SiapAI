@@ -22,13 +22,17 @@ final class AgentListViewModel: ObservableObject {
     var showsErrorBanner: Bool { loadState == .failed }
 
     // READY -> RUNNING -> STALE, most recently updated first within a group.
-    func sortedSessions(now: Date) -> [AgentSession] {
+    nonisolated static func sort(_ sessions: [AgentSession], now: Date) -> [AgentSession] {
         sessions.sorted { a, b in
             let rankA = a.displayState(now: now).sortRank
             let rankB = b.displayState(now: now).sortRank
             if rankA != rankB { return rankA < rankB }
             return a.updatedAt > b.updatedAt
         }
+    }
+
+    func sortedSessions(now: Date) -> [AgentSession] {
+        Self.sort(sessions, now: now)
     }
 
     func refresh() async {

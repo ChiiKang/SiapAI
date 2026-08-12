@@ -1,6 +1,7 @@
 import SwiftUI
 
 @main
+@MainActor // init() builds the main-actor-isolated stores
 struct AgentReadyApp: App {
     @StateObject private var settings: SettingsStore
     @StateObject private var model: AgentListViewModel
