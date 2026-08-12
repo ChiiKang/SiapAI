@@ -9,6 +9,8 @@ for work the plan already calls for.
 
 ## Orient (do this first, every time)
 
+0. Read `docs/handover.md` — what is proven vs unproven, the verification
+   order, the open question, and the findings log to append to.
 1. Read `docs/contract.md` — the states, event contract, and known risks.
 2. Read `docs/testing.md` — how everything works and is tested.
 3. Read `README.md` — the milestone status checklist.
