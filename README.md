@@ -83,5 +83,8 @@ leaves the machine at all.
 
 ## For the next agent session
 
+**Start with `docs/handover.md`** — what is proven, what is not, the exact
+order to verify it on the Mac, the one open question, and the boundaries.
+
 `/go` continues the build from wherever it stands; `/goal` runs the full
 pre-ship verification sweep. Both live in `.claude/commands/`.
