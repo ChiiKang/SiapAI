@@ -115,6 +115,39 @@ final class AgentSessionTests: XCTestCase {
         )
     }
 
+    // MARK: - Which server URLs are accepted
+
+    func testAcceptsLocalHTTPAndAnyHTTPS() {
+        let accepted = [
+            "http://192.168.1.24:8787",     // what `agent-ready serve` prints
+            "http://10.0.0.5:8787",
+            "http://172.16.4.2:8787",
+            "http://127.0.0.1:8787",
+            "http://localhost:8787",
+            "http://my-mac.local:8787",
+            "https://abc.supabase.co/functions/v1",
+        ]
+        for text in accepted {
+            XCTAssertNotNil(ServerURL.validated(text), "should accept \(text)")
+        }
+        // Whitespace from a paste must not break it.
+        XCTAssertNotNil(ServerURL.validated("  http://192.168.1.24:8787 "))
+    }
+
+    func testRejectsCleartextToThePublicInternetAndJunk() {
+        let rejected = [
+            "http://example.com",           // ATS would block this anyway
+            "http://8.8.8.8:8787",          // public IP, not a local network
+            "http://172.32.0.1:8787",       // just outside the private range
+            "ftp://192.168.1.24",
+            "not a url",
+            "",
+        ]
+        for text in rejected {
+            XCTAssertNil(ServerURL.validated(text), "should reject \(text)")
+        }
+    }
+
     // MARK: - Decoding the real endpoint payload
 
     func testDecodesTheAgentsEndpointResponse() throws {

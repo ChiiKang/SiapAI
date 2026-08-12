@@ -14,8 +14,8 @@ struct ConnectView: View {
     @State private var keyText = ""
 
     private var canSave: Bool {
-        let url = URL(string: urlText.trimmingCharacters(in: .whitespaces))
-        return url?.scheme == "https" && !keyText.trimmingCharacters(in: .whitespaces).isEmpty
+        ServerURL.validated(urlText) != nil
+            && !keyText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
@@ -26,24 +26,24 @@ struct ConnectView: View {
                         .font(.largeTitle.bold())
                         .padding(.top, 32)
 
-                    Text("Run one command on the Mac you code on. It pairs the CLI with this device.")
+                    Text("Run two commands on the Mac you code on, then paste what they print. Keep this phone on the same Wi-Fi.")
                         .font(.body)
 
                     step(
-                        label: "STEP 1 — INSTALL",
-                        content: "cd mac && npm install && npm run build && npm link"
+                        label: "STEP 1 — SET UP (PRINTS YOUR DEVICE KEY)",
+                        content: "agent-ready setup --local"
                     )
 
                     step(
-                        label: "STEP 2 — RUN SETUP ON THE MAC",
-                        content: "agent-ready setup --api-base-url <url>"
+                        label: "STEP 2 — START THE SERVER (PRINTS ITS ADDRESS)",
+                        content: "agent-ready serve"
                     )
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("STEP 3 — PASTE WHAT SETUP PRINTS")
+                        Text("STEP 3 — PASTE BOTH HERE")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        TextField("API base URL (https://…)", text: $urlText)
+                        TextField("http://192.168.1.24:8787", text: $urlText)
                             .textFieldStyle(.roundedBorder)
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)

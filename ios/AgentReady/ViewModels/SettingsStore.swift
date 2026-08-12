@@ -35,8 +35,7 @@ final class SettingsStore: ObservableObject {
 
     var apiClient: APIClient? {
         guard !deviceKey.isEmpty,
-              let url = URL(string: apiBaseURLString),
-              url.scheme == "https" || url.scheme == "http"
+              let url = ServerURL.validated(apiBaseURLString)
         else { return nil }
         return APIClient(baseURL: url, deviceKey: deviceKey)
     }

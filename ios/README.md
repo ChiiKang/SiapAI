@@ -25,23 +25,35 @@ then run on your iPhone.
 decides what you see and cannot be verified without Xcode: timestamp parsing
 against every shape Postgres returns (including the microsecond form that
 would otherwise break the whole list), the derived STALE rule at the 30-minute
-boundary, sort order, row metadata copy, and decoding the exact `GET /agents`
-payload. If those pass, the app's display logic is sound and anything left is
-plumbing.
+boundary, sort order, row metadata copy, which server URLs are accepted (local
+HTTP vs public HTTPS), and decoding the exact `GET /agents` payload. If those
+pass, the app's display logic is sound and anything left is plumbing.
 
 > This Swift code was written without access to Xcode (Linux container), so
 > expect at most minor compile fixes on first build. The code is deliberately
 > plain SwiftUI with no dependencies. If something doesn't compile, paste the
 > error and run `/go` — it's a one-line fix class, not a design problem.
 
-## First launch
+## First launch — local mode (no accounts)
 
-1. On the Mac: deploy the backend and run
-   `agent-ready setup --api-base-url https://<ref>.supabase.co/functions/v1`
-   (see `docs/testing.md` §4 on the MVP branch).
-2. On the phone: the connect screen asks for the API base URL and the
-   `dk_…` device key that setup printed. The key is stored in the Keychain,
-   never in UserDefaults.
+1. On the Mac:
+   ```bash
+   agent-ready setup --local --machine "MacBook Pro"   # prints the device key
+   agent-ready serve                                   # prints http://192.168.x.x:8787
+   ```
+2. Keep the phone on the same Wi-Fi, then paste both values into the connect
+   screen. The key is stored in the Keychain, never in UserDefaults.
+3. iOS asks once for **Local Network** permission — allow it, or the list
+   cannot reach your Mac. (Settings › Agent Ready › Local Network if you
+   dismiss it by accident.)
+
+The app accepts plain `http://` only for local addresses (private IPs,
+`localhost`, `*.local`); anything on the public internet must be `https://`.
+That matches the `NSAllowsLocalNetworking` exception in Info.plist — iOS
+would block cleartext otherwise.
+
+For the optional cloud backend, paste the
+`https://<ref>.supabase.co/functions/v1` URL instead; nothing else changes.
 
 ## What's implemented (per the design README)
 
@@ -80,9 +92,8 @@ plumbing.
 
 ## Manual test checklist
 
-Run Cmd-U first (see above), then with a real backend:
-
-With the backend deployed and a couple of `agent-ready run` sessions active:
+Run Cmd-U first (see above). Then, with `agent-ready serve` running on the
+Mac and a couple of `agent-ready run` sessions active:
 
 - [ ] List shows sessions with correct states; READY rows first and visually
       distinct in both light and dark mode.
@@ -91,8 +102,9 @@ With the backend deployed and a couple of `agent-ready run` sessions active:
 - [ ] Kill the wrapper (Ctrl-C) and wait 30+ min (or temporarily lower
       `DisplayState.staleThreshold`) → row shows dashed STALE, sorts last,
       swipe deletes it everywhere.
-- [ ] Airplane mode → pull → banner appears, list dims but keeps data, Retry
-      shows spinner; disable airplane mode → Retry → banner clears.
+- [ ] Stop `agent-ready serve` (or turn on airplane mode) → pull → banner
+      appears, list dims but keeps its data, Retry shows a spinner; start
+      `serve` again → Retry → banner clears.
 - [ ] Fresh install → connect screen → Skip → empty state; Settings shows
       unpaired key row; Connect again → paste values → list loads.
 - [ ] Dynamic Type XXL: names wrap to two lines, status labels never wrap.

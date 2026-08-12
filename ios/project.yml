@@ -27,6 +27,14 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # Local mode talks to `agent-ready serve` on the Mac over Wi-Fi.
+        # NSAllowsLocalNetworking permits plain HTTP to local addresses only
+        # — the public internet still requires HTTPS.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription:
+          Agent Ready reads your agent session list from the agent-ready
+          server running on your Mac.
   AgentReadyTests:
     type: bundle.unit-test
     platform: iOS
