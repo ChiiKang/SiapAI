@@ -149,14 +149,20 @@ must have arrived for the whole run.
 ## 6. iOS app (branch `claude/agent-ready-ios`)
 
 ```bash
-git checkout claude/agent-ready-ios
+git checkout claude/agent-ready-ios     # superset branch: also has mac/ and supabase/
 cd ios
 # needs XcodeGen (once: brew install xcodegen)
 xcodegen generate
 open AgentReady.xcodeproj
 ```
 
-Run on your iPhone with free development signing (Xcode → Signing: your
+**Press Cmd-U first.** The `AgentReadyTests` target checks the display logic
+that can only be verified in Xcode: timestamp parsing against every shape
+Postgres returns, the 30-minute STALE boundary, sort order, metadata copy,
+and decoding a real `GET /agents` payload. Green there means the remaining
+risk is plumbing, not logic.
+
+Then run on your iPhone with free development signing (Xcode → Signing: your
 personal team). First launch shows the connect screen: paste the API base URL
 and device key (stored in the Keychain, never UserDefaults). Full manual test
 checklist is in `ios/README.md`.
@@ -180,9 +186,11 @@ checklist is in `ios/README.md`.
 4. **Pairing** is manual paste (URL + key) rather than the wireframe's
    auto-pairing code exchange: the plan's endpoint contract has no pairing
    endpoint, and the plan wins on architecture.
-5. **iOS build is untested in this container** (no Xcode on Linux). The Swift
-   is deliberately plain SwiftUI; expect at most minor compile fixes on first
-   `xcodegen generate` + build.
+5. **iOS build is untested in this container** (no Xcode, and no Swift
+   toolchain reachable through the proxy). The Swift is deliberately plain
+   SwiftUI with no dependencies, and the logic most likely to be wrong is
+   covered by the Cmd-U tests — but expect at most minor compile fixes on
+   first `xcodegen generate` + build. Paste any error and run `/go`.
 
 ## 8. What the next agent should NOT do
 
