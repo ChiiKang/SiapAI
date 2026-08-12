@@ -37,10 +37,13 @@ docs/       contract.md (states + event contract) · testing.md (how to test eve
       eventId), 4xx no-retry, graceful local-only mode, structured logs
 - [ ] Milestone 6 — native APNs push (after Apple Developer enrollment)
 
-All code milestones are implemented and unit/integration tested (15 Node
-tests + 5 Deno tests). What remains is deployment + on-device verification,
-which needs the owner's accounts and hardware: **`docs/testing.md` is the
-step-by-step guide.**
+All code milestones are implemented and tested: **21 Node tests** (CLI,
+adapters, retry/idempotency semantics, five concurrent sessions, privacy),
+**9 Deno tests** (backend validation, notify rule, and a cross-surface
+contract test replaying the CLI's real payloads), and an **Xcode test target**
+(Cmd-U) for the iOS display logic. What remains is deployment + on-device
+verification, which needs the owner's accounts and hardware:
+**`docs/testing.md` is the step-by-step guide.**
 
 ## Quick start
 
