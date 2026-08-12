@@ -1,0 +1,17 @@
+{
+  "name": "agent-ready",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wraps a local coding agent, detects RUNNING → READY transitions, and (from Milestone 2) sends events to the backend.",
+  "bin": {
+    "agent-ready": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test tests/run.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.0"
+  }
+}
