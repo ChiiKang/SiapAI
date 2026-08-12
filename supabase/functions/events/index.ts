@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
 
   const { data: existing, error: readError } = await supabase
     .from("agents")
-    .select("status, last_event_id, started_at")
+    .select("status, last_event_id, started_at, occurred_at")
     .eq("session_id", event.sessionId)
     .maybeSingle();
   if (readError) {
@@ -66,6 +66,15 @@ Deno.serve(async (req) => {
     return json(200, { ok: true, duplicate: true, notified: false });
   }
 
+  // Out-of-order protection: a delayed delivery of an older event must not
+  // rewind the stored state, which would let the next READY notify twice.
+  if (
+    existing?.occurred_at &&
+    Date.parse(event.occurredAt) < Date.parse(existing.occurred_at)
+  ) {
+    return json(200, { ok: true, stale: true, notified: false });
+  }
+
   const notify = shouldNotify(existing?.status ?? null, event.status);
 
   const { error: writeError } = await supabase.from("agents").upsert({
@@ -76,6 +85,7 @@ Deno.serve(async (req) => {
     status: event.status,
     started_at: existing?.started_at ?? event.occurredAt,
     updated_at: new Date().toISOString(),
+    occurred_at: event.occurredAt,
     last_event_id: event.eventId,
   });
   if (writeError) {

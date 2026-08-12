@@ -55,6 +55,16 @@ check "same eventId retried -> duplicate, no notification" '"duplicate":true' \
 check "repeated READY (new eventId) -> no notification" '"notified":false' \
   "$(post "$DEVICE_KEY" "$(event_json "$(uuidgen | tr 'A-Z' 'a-z')" READY)")"
 
+# A late-arriving older event must not rewind the state (which would let the
+# next READY notify a second time).
+OLD_JSON=$(cat <<EOF
+{"eventId":"$(uuidgen | tr 'A-Z' 'a-z')","sessionId":"$SESSION_ID","displayName":"Backend test",
+ "machineName":"Test Mac","agentKind":"Codex","status":"RUNNING","occurredAt":"2000-01-01T00:00:00Z"}
+EOF
+)
+check "out-of-order older event ignored" '"stale":true' \
+  "$(post "$DEVICE_KEY" "$OLD_JSON")"
+
 check "GET /agents shows the session as READY" '"status":"READY"' \
   "$(curl -s "$BASE_URL/agents" -H "Authorization: Bearer $DEVICE_KEY")"
 

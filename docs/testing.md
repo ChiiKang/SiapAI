@@ -52,23 +52,32 @@ agent-ready run -- codex            POST /events                  Telegram notif
 ### CLI — automated (already green in CI-less form)
 
 ```bash
-cd mac && npm install && npm test          # 15 tests
+cd mac && npm install && npm test          # 21 tests
 ```
 
 Covers: one READY per turn, `turn-id` dedupe, approval reset, exit≠READY for
-Codex, Claude Stop/UserPromptSubmit mapping, generic exit=READY, contract
-fields on the wire, same-`eventId` retries, bounded retry (5 max), 4xx
-no-retry, local-only mode, and zero content leakage (asserted on stdout,
-stderr, and the session log).
+Codex, Claude Stop/UserPromptSubmit mapping, generic exit=READY, interrupted
+process reports no READY, contract fields on the wire, same-`eventId`
+retries, bounded retry (5 max), 4xx no-retry, local-only mode, `setup`
+config (0600 permissions, key rotation), five concurrent sessions staying
+distinct, and zero content leakage (asserted on stdout, stderr, and the
+session log).
 
-### Backend — pure logic
+### Backend — logic and cross-surface contract
 
 ```bash
-deno test supabase/functions/events/logic_test.ts   # 5 tests
+deno test --allow-read supabase/functions/events/   # 9 tests
 ```
 
 Covers: payload validation (STALE rejected — it must never be stored), the
-notify rule truth table, notification copy.
+notify rule truth table, notification copy, and a **contract test that
+replays the exact payloads the CLI put on the wire** (captured as a fixture
+by the Node suite) through the real validator and notify rule — including
+redelivery and out-of-order arrival. If the CLI and the backend ever drift
+apart, this fails here instead of on your Mac.
+
+> Run the Node suite before the Deno suite when you change the CLI's event
+> shape: it regenerates `mac/tests/fixtures/captured-events.json`.
 
 ### CLI — manual, against real Codex (the Milestone 1 gate)
 
@@ -118,10 +127,11 @@ of sending it — the event path is testable without Telegram.)
 ./scripts/test-backend.sh https://<project-ref>.supabase.co/functions/v1 dk_…
 ```
 
-9 checks: bad key rejected, STALE rejected, RUNNING stores without
+10 checks: bad key rejected, STALE rejected, RUNNING stores without
 notification, READY notifies, retried `eventId` is a no-op duplicate,
-repeated READY does not re-notify, GET lists, DELETE removes. Manual part:
-**exactly one** Telegram message must have arrived for the whole run.
+repeated READY does not re-notify, a late-arriving older event is ignored,
+GET lists, DELETE removes. Manual part: **exactly one** Telegram message
+must have arrived for the whole run.
 
 ## 5. End-to-end acceptance tests (plan §10)
 

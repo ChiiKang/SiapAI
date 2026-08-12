@@ -1,0 +1,38 @@
+[
+  {
+    "eventId": "b21bd5be-5d23-44e1-aeca-6693d1d69988",
+    "sessionId": "55c93401-a9f8-494a-b8dc-d00605474352",
+    "displayName": "Auth refactor",
+    "machineName": "MacBook Pro",
+    "agentKind": "Codex",
+    "status": "RUNNING",
+    "occurredAt": "2026-08-12T12:05:04.133Z"
+  },
+  {
+    "eventId": "0afacd20-7ad7-4559-afc2-c057e283d017",
+    "sessionId": "55c93401-a9f8-494a-b8dc-d00605474352",
+    "displayName": "Auth refactor",
+    "machineName": "MacBook Pro",
+    "agentKind": "Codex",
+    "status": "READY",
+    "occurredAt": "2026-08-12T12:05:04.260Z"
+  },
+  {
+    "eventId": "a2646c8e-50c6-4e8a-bfe0-6957f7f08ecb",
+    "sessionId": "55c93401-a9f8-494a-b8dc-d00605474352",
+    "displayName": "Auth refactor",
+    "machineName": "MacBook Pro",
+    "agentKind": "Codex",
+    "status": "RUNNING",
+    "occurredAt": "2026-08-12T12:05:04.314Z"
+  },
+  {
+    "eventId": "c70d2bf1-beff-4c48-a797-440f8b101898",
+    "sessionId": "55c93401-a9f8-494a-b8dc-d00605474352",
+    "displayName": "Auth refactor",
+    "machineName": "MacBook Pro",
+    "agentKind": "Codex",
+    "status": "READY",
+    "occurredAt": "2026-08-12T12:05:04.361Z"
+  }
+]
