@@ -106,9 +106,14 @@ agent-ready run --name "Test" -- codex        # no config -> local-only mode
 tail -f ~/.agent-ready/sessions/<short-id>.log
 ```
 
-Run 2–3 real turns. Pass: exactly one `READY` line per completed turn; the
-log records every notify event type Codex emitted; no prompt/output text
-anywhere. Same for Claude Code: `agent-ready run --name "Test" -- claude`.
+Run 2–3 real turns. Pass: exactly one `READY` line per completed turn, each
+preceded by a `RUNNING` line from the second turn onward; the log records
+every notify event type Codex emitted; no prompt/output text anywhere. Same
+for Claude Code: `agent-ready run --name "Test" -- claude`.
+
+This gate was run against Codex 0.147.0 and Claude Code 2.1.220 on
+2026-08-13 — results, and the multi-turn bug it caught, in
+`docs/handover.md` § 5.
 
 ## 4. Running it for real, locally (no accounts, ~5 minutes)
 

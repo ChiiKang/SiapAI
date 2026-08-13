@@ -32,8 +32,10 @@ test("exactly one READY per completed turn; duplicates ignored", async () => {
   assert.equal(result.code, 0);
   // 3 distinct turns -> exactly 3 READY transitions; the replayed turn-id adds none.
   assert.equal(count(result.stdout, /status\s+READY/g), 3);
-  // RUNNING appears once, at launch (no approval event in this script).
-  assert.equal(count(result.stdout, /status\s+RUNNING/g), 1);
+  // Launch RUNNING, plus a reset before each of the 2 later turns. The
+  // replayed turn-id is not a new turn and must not add one.
+  assert.equal(count(result.stdout, /status\s+RUNNING/g), 3);
+  assert.equal(count(result.stdout, /new turn observed/g), 2);
   // The duplicate was seen and recorded as ignored.
   assert.match(result.log, /duplicate turn=turn-2 ignored/);
   // Every notify event type received is logged for the empirical record.
@@ -52,11 +54,19 @@ test("approval-requested resets READY back to RUNNING", async () => {
   assert.doesNotMatch(result.stdout, /no RUNNING reset observed/);
 });
 
-test("consecutive READY without a reset is marked explicitly", async () => {
-  const result = await runCodex(["turn", "turn", "exit"]);
+// Regression guard for the bug real Codex 0.147 exhibited (docs/handover.md
+// § 5): every turn completed and was detected, but only the first one ever
+// notified, because nothing reset the session out of READY in between.
+test("a new turn-id resets to RUNNING, so every turn is a fresh transition", async () => {
+  const result = await runCodex(["turn", "turn", "turn", "exit"]);
 
   assert.equal(result.code, 0);
-  assert.equal(count(result.stdout, /no RUNNING reset observed/g), 1);
+  assert.equal(count(result.stdout, /status\s+READY/g), 3);
+  // Launch + one reset per later turn: three RUNNING -> READY transitions,
+  // which is three notifications rather than one.
+  assert.equal(count(result.stdout, /status\s+RUNNING/g), 3);
+  // Every READY is a genuine transition, so none carries the gap marker.
+  assert.doesNotMatch(result.stdout, /no RUNNING reset observed/);
 });
 
 test("process exit is never treated as READY (codex adapter)", async () => {
