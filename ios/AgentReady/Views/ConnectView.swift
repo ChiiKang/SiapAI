@@ -43,11 +43,21 @@ struct ConnectView: View {
                         Text("STEP 3 — PASTE BOTH HERE")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        TextField("http://192.168.1.24:8787", text: $urlText)
-                            .textFieldStyle(.roundedBorder)
-                            .keyboardType(.URL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                        // `Text(verbatim:)`, not a plain placeholder string: a
+                        // bare URL goes through SwiftUI's Markdown parsing and
+                        // comes out auto-linked in blue, which makes the empty
+                        // field look already filled in while "Save & connect"
+                        // sits disabled.
+                        TextField(
+                            "Server address",
+                            text: $urlText,
+                            prompt: Text(verbatim: "http://192.168.1.24:8787")
+                        )
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                         SecureField("Device key (dk_…)", text: $keyText)
                             .textFieldStyle(.roundedBorder)
                             .textInputAutocapitalization(.never)

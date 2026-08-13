@@ -40,5 +40,10 @@ targets:
     platform: iOS
     sources:
       - AgentReadyTests
+    settings:
+      base:
+        # XcodeGen does not turn this on by itself, and since Xcode 15 a test
+        # bundle without an Info.plist fails to code sign at build time.
+        GENERATE_INFOPLIST_FILE: true
     dependencies:
       - target: AgentReady
