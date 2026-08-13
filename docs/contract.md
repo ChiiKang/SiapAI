@@ -123,7 +123,7 @@ introduces no new product state.
 
 | Agent | Adapter | Turn start (→ RUNNING) | Completion (→ READY) |
 | --- | --- | --- | --- |
-| Codex | `CodexAdapter` | `approval-requested` only (no official turn-start event — see Known risks) | `notify` hook, `agent-turn-complete`, deduped by `turn-id` |
+| Codex | `CodexAdapter` | a previously unseen `turn-id` on `agent-turn-complete` (Codex has no turn-start event — see Known risks) | `notify` hook, `agent-turn-complete`, deduped by `turn-id` |
 | Claude Code | `ClaudeCodeAdapter` | `UserPromptSubmit` hook (a real turn-start signal) | `Stop` hook |
 | Any batch script | `GenericProcessAdapter` | launch | Process exit (legitimate for run-to-completion programs, unlike interactive TUIs) |
 
@@ -137,17 +137,38 @@ local hook IPC: prompts, terminal output, file names, source code, repository
 contents, `last-assistant-message`, `input-messages`. The Codex hook forwards
 only `{ type, turn-id }`.
 
-## Known risks (Milestone 1, to be resolved empirically)
+## Known risks
 
-1. **No official turn-start signal in Codex interactive mode.** `notify` fires
-   on `agent-turn-complete` (and possibly `approval-requested`), but nothing
-   fires when the user submits the next prompt. Consequence: after READY, the
-   wrapper cannot always observe the reset to RUNNING; a second completed turn
-   may arrive as READY → READY. Locally this is printed with an explicit
-   marker. Per the guardrails we do **not** infer turn start from stdin or
-   terminal output. The session log records every notify event type received
-   from real Codex sessions; if the gap persists, it is a decision point
-   before Milestone 2 (it affects whether turn 2+ can notify under the
-   RUNNING → READY rule).
-2. **`-c notify=[...]` overrides any user-configured notify program** for the
+1. **No official turn-start signal in Codex interactive mode — resolved.**
+   `notify` fires on `agent-turn-complete` and nothing fires when the user
+   submits the next prompt, so after READY there is no event that resets the
+   session to RUNNING. Measured against real Codex 0.147 (docs/handover.md
+   § 5): three completed turns produced three `agent-turn-complete` events
+   and exactly one notification. `approval-requested` was never emitted at
+   all.
+
+   Resolution: a completion carrying a `turn-id` the adapter has never seen
+   is itself official evidence that a further turn ran, and therefore that
+   the session left READY. `CodexAdapter` reports RUNNING at that moment,
+   immediately before the new READY, so RUNNING → READY happens once per
+   distinct completed turn. This stays inside Codex's own signals — no
+   polling, no output parsing, no inference from stdin.
+
+   The cost is that the RUNNING for turn *n* is reported when turn *n*
+   finishes rather than when it starts, so a Codex session shows READY while
+   a later turn is actually in progress. That is invisible in the
+   notification path (which only cares about the transition) but it does mean
+   the iOS list can briefly read READY for a Codex session that is working.
+   Claude Code is unaffected: `UserPromptSubmit` is a real turn-start signal
+   and its sessions cycle correctly in real time.
+
+2. **Codex does have a hooks system** (`~/.codex/hooks.json`:
+   `UserPromptSubmit`, `Stop`, `PreToolUse`, …) which would give a true
+   turn-start signal. It is not used, because a hook injected per-invocation
+   with `-c` is silently ignored unless Codex is launched with
+   `--dangerously-bypass-hook-trust`, which un-gates every other untrusted
+   hook for that run. Worth revisiting if Codex gains a scoped way to supply
+   a trusted hook for one invocation.
+
+3. **`-c notify=[...]` overrides any user-configured notify program** for the
    wrapped session only. Acceptable for MVP; chaining can be added later.

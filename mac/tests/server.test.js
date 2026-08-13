@@ -309,3 +309,42 @@ test("end to end: the CLI drives the local server and one turn notifies once", a
     assert.equal(session.status, "READY");
   });
 });
+
+// The walk-away case, and the one real Codex got wrong: a session left running
+// across several turns must notify on each of them, not only the first.
+test("end to end: three Codex turns in one session notify three times", async () => {
+  await withServer(async ({ base, provider, home }) => {
+    fs.writeFileSync(
+      path.join(home, "config.json"),
+      JSON.stringify({
+        apiBaseUrl: base,
+        deviceKey: DEVICE_KEY,
+        machineName: "MacBook Pro",
+      })
+    );
+
+    const { runWrapper } = require("./helpers");
+    const result = await runWrapper({
+      args: [
+        "run",
+        "--name",
+        "Long session",
+        "--adapter",
+        "codex",
+        "--",
+        process.execPath,
+        path.join(__dirname, "fake-codex.js"),
+      ],
+      // A replayed turn-id in the middle must not become a fourth.
+      steps: ["turn", "turn", "dup", "turn", "exit"],
+      home,
+    });
+
+    assert.equal(result.code, 0);
+    assert.equal(provider.sent.length, 3);
+    for (const sent of provider.sent) {
+      assert.equal(sent.displayName, "Long session");
+      assert.equal(sent.status, "READY");
+    }
+  });
+});

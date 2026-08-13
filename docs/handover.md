@@ -35,12 +35,18 @@ Two branches, both pushed:
 - No prompt text, agent output, or file names reach stdout, the session
   log, or the wire.
 
-**Not yet proven — your job:**
+**Proven on hardware 2026-08-13** (details in § 5):
 
-1. Real Codex emits the notify hook as expected, once per turn.
-2. Real Claude Code does the same via its hooks.
-3. The iOS app compiles in Xcode and runs on the owner's iPhone.
-4. The whole thing works end to end while the owner walks away.
+1. Real Codex emits the notify hook once per completed turn, reliably.
+2. Real Claude Code cycles RUNNING ↔ READY correctly across many turns.
+3. The iOS app builds in Xcode 26.4.1 and its 9 unit tests pass on a
+   simulator, after three fixes.
+
+**Still not proven:**
+
+1. The app running on the owner's actual iPhone, against the LAN address
+   (`ios/README.md`'s manual checklist). The phone was not connected.
+2. The whole thing working end to end while the owner walks away.
 
 ---
 
@@ -119,7 +125,13 @@ no Apple membership needed.
 
 ---
 
-## 3. The one open question
+## 3. The one open question — CLOSED 2026-08-13
+
+> Answered on hardware and settled with the owner: option 2 below. The
+> evidence, the rejected alternative, and what it cost are in § 5 and in
+> docs/contract.md § Known risks. The rest of this section is kept as the
+> record of how the decision was framed.
+
 
 **Codex has no official turn-start event.** The wrapper learns a new turn
 started only from `approval-requested`. Consequence: after a READY, if the
@@ -176,15 +188,99 @@ choose.
 Keep this section current; it is what the next session (and the owner)
 reads first.
 
+Run on 2026-08-13, macOS 26.3, Codex CLI 0.147.0, Claude Code 2.1.220,
+Xcode 26.4.1, Node 22.21.1, Deno 2.7.1.
+
+**Codex notify event types observed.** Exactly one, across every session:
+`agent-turn-complete`, always carrying a distinct `turn-id`. Detection itself
+is completely reliable — one event per completed turn, never mid-turn, never
+duplicated. `approval-requested` was **never emitted**; the string does not
+appear in the 0.147 binary at all, so the adapter's only turn-start source
+was dead code.
+
 ```
-DATE        WHO      FINDING
-----------  -------  --------------------------------------------------
-(pending)   local    Codex notify event types observed:
-(pending)   local    Codex multi-turn notification behaviour:
-(pending)   local    Claude Code multi-turn behaviour:
-(pending)   local    Xcode build result / fixes applied:
-(pending)   local    Acceptance tests passed / failed:
+notify event type=agent-turn-complete turn=019ff913-2f03-76b3-876b-5995e5effebc
+notify event type=agent-turn-complete turn=019ff913-fb02-7ce1-8c3c-0b62d87d9b86
+notify event type=agent-turn-complete turn=019ff914-c70a-7251-9a21-82fdb989349c
 ```
+
+**Codex multi-turn notification behaviour.** The § 3 risk was real and bit on
+every session. Three real turns in one interactive session: three READYs, one
+notification.
+
+```
+11:03:36  READY   Codex multiturn  → notified
+11:04:28  READY   Codex multiturn            <- silent
+11:05:21  READY   Codex multiturn            <- silent
+```
+
+Resolved with § 3 option 2, on the owner's decision: an unseen `turn-id`
+resets the session to RUNNING immediately before the new READY, so each
+distinct completed turn is one RUNNING → READY transition. Covered by a unit
+test and an end-to-end test that counts notifications (`npm test`, 36).
+
+§ 3 option 1 was investigated first and rejected on evidence: Codex 0.147
+*does* have a hooks system with a genuine `UserPromptSubmit` turn-start event
+(payload verified: `{session_id, turn_id, hook_event_name, …}`), but a hook
+injected per-invocation with `-c` is silently skipped — no error, no prompt —
+unless codex is launched with `--dangerously-bypass-hook-trust`, which
+un-gates every other untrusted hook for that run. Not worth it for a signal
+option 2 already derives safely. Recorded in docs/contract.md § Known risks
+in case Codex later offers a scoped, trusted per-invocation hook.
+
+**Claude Code multi-turn behaviour.** Correct, with no changes needed. Three
+turns, clean cycling, three notifications:
+
+```
+11:13:00 RUNNING → 11:13:23 READY → notified
+11:13:57 RUNNING → 11:13:59 READY → notified
+11:14:35 RUNNING → 11:14:37 READY → notified
+```
+
+**Xcode build result / fixes applied.** Did not build as committed; three
+fixes, all on `claude/agent-ready-ios`:
+
+- test bundle had no Info.plist and none was generated → code signing failed
+  before any test ran (`GENERATE_INFOPLIST_FILE: true` on `AgentReadyTests`);
+- asset catalog had no `AppIcon` set, which actool treats as a build error →
+  added a placeholder icon (replace when there is a designed one);
+- connect screen: the server-address placeholder rendered in link blue
+  because SwiftUI runs placeholder strings through Markdown and auto-links a
+  bare URL, so the empty field looked pre-filled while "Save & connect" sat
+  disabled → `Text(verbatim:)`.
+
+All 9 iOS unit tests pass via `xcodebuild test` on an iPhone 17 Pro simulator.
+`AgentReady.xcodeproj` and the generated `Info.plist` are now gitignored as
+xcodegen output.
+
+**Acceptance tests passed / failed** (docs/testing.md § 5):
+
+| Test | Result |
+| --- | --- |
+| Single session | pass — one READY, one notification |
+| No duplicate | pass — `retry 1..4/5`, then `delivered … same eventId`, one notification |
+| Five sessions | pass — five independent rows, five notifications |
+| Backend restart | pass — 10 sessions listed before and after |
+| Interrupted job | pass — SIGINT produced no READY and no notification |
+| Privacy | pass — see note below |
+| iOS list | **not run** — needs the physical iPhone |
+| Walk-away | **not run** — needs the owner |
+
+Privacy note: `grep -riE 'secret|prompt' ~/.agent-ready/` does return lines,
+but only because "prompt" occurs in Claude Code's *event name*
+(`UserPromptSubmit`) and in the reason string `(prompt submitted — turn in
+progress)`. No prompt text, agent output, or file name appears anywhere. The
+Codex notify payloads carry `input-messages` and `last-assistant-message` and
+neither reaches the log.
+
+**Open papercut, not fixed.** `npm test` rewrites the committed fixture
+`mac/tests/fixtures/captured-events.json` on every run (fresh UUIDs and
+timestamps), so a clean checkout is dirty after testing. Deliberate and
+documented — the Deno contract test replays those exact payloads — but it
+makes `git status` noisy and invites committing churn. Normalising the
+volatile fields before writing would keep the contract test's value and make
+the suite idempotent. Left alone because it changes a documented mechanism
+that spans both suites.
 
 ## 6. Definition of done for this handover
 

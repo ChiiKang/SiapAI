@@ -9,6 +9,11 @@
 // No polling, no output parsing, no process-exit guessing. The agent's stdio
 // is inherited untouched. READY is deduped by turn-id so a repeated hook
 // invocation for the same turn emits nothing.
+//
+// Codex emits no turn-start event, so turn starts are derived from the same
+// signal: a completion carrying an unseen turn-id proves a further turn ran,
+// and the adapter reports RUNNING just before the new READY. See
+// docs/contract.md § Known risks for what that costs.
 
 import { spawn } from "node:child_process";
 import * as path from "node:path";
@@ -93,6 +98,15 @@ export class CodexAdapter implements AgentAdapter {
           this.logEvent(`duplicate turn=${turnId} ignored`);
           return;
         }
+        // Codex emits no turn-start event, so a completion carrying a
+        // turn-id we have never seen is the only official evidence that a
+        // further turn ran — and therefore that the session left READY after
+        // the previous one. Reset to RUNNING here, before reporting the new
+        // READY, so RUNNING -> READY happens once per distinct completed
+        // turn. Still Codex's own signal: no polling, no output parsing.
+        if (this.seenTurnIds.size > 0) {
+          for (const cb of this.runningCallbacks) cb("new turn observed");
+        }
         this.seenTurnIds.add(turnId);
       }
       for (const cb of this.readyCallbacks) cb({ turnId });
@@ -100,7 +114,9 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     if (type === "approval-requested") {
-      // Official proof that a turn is in progress.
+      // Official proof that a turn is in progress. Never observed from Codex
+      // 0.147 (see docs/handover.md § 5) — kept because it is harmless and
+      // costs nothing if a version does emit it.
       for (const cb of this.runningCallbacks) cb("approval requested");
       return;
     }

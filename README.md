@@ -48,7 +48,7 @@ key: branch `claude/agent-ready-ios`, see `ios/README.md`.
 
 - [x] **Milestone 0 — contract** (`docs/contract.md`)
 - [x] **Milestone 1 — READY detection locally** (Codex `notify` hook)
-      — *pending: your manual run against real Codex, `docs/testing.md` §3*
+      — *verified against real Codex 0.147 on 2026-08-13, `docs/handover.md` §5*
 - [x] **Milestone 1.5 — more adapters**: Claude Code (`UserPromptSubmit`/`Stop`
       hooks), generic process (exit = READY for batch jobs)
 - [x] **Milestone 2 — event path**: local server (`agent-ready serve`) and the
@@ -57,16 +57,18 @@ key: branch `claude/agent-ready-ios`, see `ios/README.md`.
 - [x] **Milestone 3 — notification**: macOS Notification Center locally,
       Telegram for away-from-desk, behind one provider interface
 - [x] **Milestone 4 — iOS status screen** (branch `claude/agent-ready-ios`)
-      — *pending: your Xcode build, `ios/README.md`*
+      — *builds on Xcode 26.4.1, tests green on simulator; pending: your run
+      on the phone itself, `ios/README.md`*
 - [x] **Milestone 5 — hardening**: bounded exponential retry (5 max, same
       eventId), 4xx no-retry, atomic state writes, clean port-conflict and
       offline behavior
 - [ ] Milestone 6 — native APNs push (only if this proves itself worth the
       Apple Developer enrollment)
 
-Tested with **35 Node tests**, **17 Deno tests**, and an **Xcode test target**
-(Cmd-U). The behavioral contract lives in `mac/tests/scenarios.json` and runs
-against both backends, so they cannot drift apart.
+Tested with **36 Node tests**, **17 Deno tests**, and **9 iOS unit tests**
+(Cmd-U, or `xcodebuild test`). The behavioral contract lives in
+`mac/tests/scenarios.json` and runs against both backends, so they cannot
+drift apart.
 
 ## How detection works (and what it never does)
 
@@ -75,7 +77,9 @@ completion signal — Codex's `notify` hook, Claude Code's `Stop` hook, or
 process exit for run-to-completion scripts. Hooks forward only
 `{type, turn-id}` over a local Unix socket. No polling, no output parsing, no
 exit-guessing for interactive agents, and the agent's own stdio passes through
-untouched.
+untouched. Codex publishes no turn-*start* event, so a completion carrying a
+`turn-id` never seen before is what tells the wrapper another turn ran — still
+Codex's own signal, and still nothing inferred from the terminal.
 
 Privacy: no prompts, terminal output, file names, or source code ever leave
 your Mac — they are not even read by the wrapper. In local mode nothing
